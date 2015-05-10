@@ -6,10 +6,6 @@ import time
 from jwt.jwt import JWT
 from jwt.jwk import JWKSet
 
-proxies = {
-        "https": "http://172.16.0.1:37269"
-        }
-
 default_id_classes = {}
 
 class OAuthException(RuntimeError):
@@ -83,8 +79,7 @@ class GoogleOAuthIdentity(JWTBasedOAuthIdentity):
 
     @staticmethod
     def _fetch_keyset_cert():
-        return (requests.get("https://www.googleapis.com/oauth2/v2/certs",
-            proxies = proxies).text, time.time() + 24 * 60 * 60)
+        return (requests.get("https://www.googleapis.com/oauth2/v2/certs").text, time.time() + 24 * 60 * 60)
 
     def __init__(self, config, data):
         super().__init__(config, data)
@@ -123,8 +118,7 @@ class OAuthConfig:
                 "redirect_uri": self.redirect_uri,
                 "grant_type": "authorization_code",
                 }
-        return self.id_class(self, json.loads(requests.post(self.token_endpoint, 
-            data, proxies = proxies).text))
+        return self.id_class(self, json.loads(requests.post(self.token_endpoint, data).text))
 
     def get_token(self, request):
         """Fetch the OAuth token with the code in Pyramid request object.
