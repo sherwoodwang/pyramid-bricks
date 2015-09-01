@@ -4,7 +4,7 @@ import os
 from setuptools import setup, find_packages
 
 setup(name='pyramid_bricks',
-      version='0.01',
+      version='0.1',
       description='Common bricks for Pyramid framework',
       classifiers=[
         "Programming Language :: Python",
@@ -16,5 +16,8 @@ setup(name='pyramid_bricks',
       packages=find_packages(),
       include_package_data=True,
       zip_safe=False,
-      install_requires=['jwt'],
+      install_requires=[
+	      'jwt',
+	      'requests',
+	      ],
       )

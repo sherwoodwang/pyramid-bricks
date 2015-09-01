@@ -1,5 +1,5 @@
-import copy
 import requests
+from urllib.parse import urlparse, urlencode
 
 import json
 import time
@@ -13,22 +13,28 @@ class OAuthException(RuntimeError):
 
 class OAuthIdentity:
     name = "default"
+    config = {}
 
-    def __init__(self, config, data):
+    def __init__(self, config, status_code, data):
         """Constructor
 
-        :param OAuthConfig config: the OAuthConfig which constructs this object
+        :param OAuthProviderConfig config: the OAuthProviderConfig which constructs this object
         :param dict data: the token returned by OAuth provider
         """
+
+        if status_code not in [200, 400]:
+            raise OAuthException('#http error', 'status code is {}'.format(status_code))
 
         if "error" in data:
             raise OAuthException(data["error"], data["error_description"])
 
         self.data = data
         self.config = config
-        self.access_token = self.data["access_token"]
-        self.expires_in = self.data["expires_in"]
-        self.token_type = self.data["token_type"]
+        for attr in ["access_token", "expires_in", "token_type"]:
+            if attr in self.data:
+                setattr(self, attr, self.data[attr])
+            else:
+                setattr(self, attr, None)
 
         if "refresh_token" in self.data:
             self.refresh_token = self.data["refresh_token"]
@@ -36,8 +42,12 @@ class OAuthIdentity:
             self.refresh_token = None
 
     @classmethod
-    def register(cls, id_classes = default_id_classes):
-        id_classes[cls.name] = cls
+    def register(cls, name=None, defconf=None, id_classes=default_id_classes):
+        if name == None:
+            name = cls.name
+        if defconf == None:
+            defconf = cls.config
+        id_classes[cls.name] = (cls, defconf)
 
 OAuthIdentity.register()
 
@@ -66,40 +76,38 @@ class JWTBasedOAuthIdentity(OAuthIdentity):
     def _fetch_keyset_cert():
         raise NotImplementedError()
 
-    def __init__(self, config, data):
-        super().__init__(config, data)
+    def __init__(self, config, status_code, data):
+        super().__init__(config, status_code, data)
         self.__refresh_keyset()
         self.id_token = json.loads(self.jwt.decode(data["id_token"]).decode("utf-8"))
         if self.id_token["aud"] != self.config.client_id:
             raise OAuthException("#audience not match",
                     "Audience of the issued token is not this application")
 
-class GoogleOAuthIdentity(JWTBasedOAuthIdentity):
-    name = "google"
-
-    @staticmethod
-    def _fetch_keyset_cert():
-        return (requests.get("https://www.googleapis.com/oauth2/v2/certs").text, time.time() + 24 * 60 * 60)
-
-    def __init__(self, config, data):
-        super().__init__(config, data)
-        if self.id_token["iss"] != "accounts.google.com":
-            raise OAuthException("#unknown issuer",
-                    "Issuer of the token must be Google")
-        self.subject = self.id_token['sub']
-
-GoogleOAuthIdentity.register()
-
-class OAuthConfig:
-    def __init__(self):
+class OAuthProviderConfig:
+    def __init__(self, name, callback_url_prefix):
+        self.name = name
+        self.callback_url_prefix = callback_url_prefix
         self.authentication_endpoint = None
         self.token_endpoint = None
         self.client_id = None
-        self.email_address = None
         self.client_secret = None
-        self.redirect_uri = None
-        self.javascript_origins = None
         self.id_class = OAuthIdentity
+
+    def authorization_url(self, scope, state):
+        param = {}
+        param['client_id'] = self.client_id
+        param['response_type'] = 'code'
+        param['redirect_uri'] = self.callback_url_prefix + self.name
+        param['scope'] = scope
+        param['state'] = state
+        ret = self.authentication_endpoint
+        if ret.find('?') == -1:
+            ret += '?'
+        else:
+            ret += '&'
+        ret += urlencode(param)
+        return ret
 
     def get_token_by_code(self, authorization_code):
         """Fetch the OAuth token, the token is returned as an instance of
@@ -115,10 +123,11 @@ class OAuthConfig:
                 "code": authorization_code,
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
-                "redirect_uri": self.redirect_uri,
+                "redirect_uri": self.callback_url_prefix + self.name,
                 "grant_type": "authorization_code",
                 }
-        return self.id_class(self, json.loads(requests.post(self.token_endpoint, data).text))
+        resp = requests.post(self.token_endpoint, data)
+        return self.id_class(self, resp.status_code, json.loads(resp.text) if resp.status_code in [200, 400] else None)
 
     def get_token(self, request):
         """Fetch the OAuth token with the code in Pyramid request object.
@@ -135,62 +144,68 @@ class OAuthConfig:
 
     @staticmethod
     def factory(request):
-        return request.registry._oauth_config
+        return request.registry.oauth2_config
 
-def configure_oauth(config, settings, id_classes = default_id_classes):
+def configure_oauth2(config, settings, id_classes=default_id_classes):
     """Configure Pyramid config object with settings
 
-    Setting strings starting with ``oauth.'' will be analyzed.
-    registry._oauth_config will be generated as a dictionary. The second part
-    of setting entries is the provider, which will be the key of
-    registry._oauth_config. The value in the dictionary will be the OAuthConfig
-    object containing your settings. ``oauth.<provider>.id_class'' will be
-    looked up in id_classes.
+    Setting strings starting with ``oauth2.'' will be analyzed. And
+    registry.oauth2_config will be generated as a dictionary. The part
+    following ``oauth2.'' is the provider name, which is the key of
+    registry.oauth2_config. The values in the dictionary are instances of
+    OAuthProviderConfig. ``oauth2.<provider>.id_class'' will be looked up in id_classes.
 
-    OAuthConfig.factory is a simple factory returns registry._oauth_config.
+    OAuthProviderConfig.factory is a simple factory returns registry.oauth2_config.
 
     Example:
         Settings::
-            oauth.google.id_class = google
-            oauth.google.authentication_endpoint = https://accounts.google.com/o/oauth2/auth
-            oauth.google.token_endpoint = https://accounts.google.com/o/oauth2/token
-            oauth.google.client_id = XXX.apps.googleusercontent.com
-            oauth.google.email_address = XXX@developer.gserviceaccount.com
-            oauth.google.client_secret = XXX
-            oauth.google.redirect_uri = http://mysite/oauth2callback/google
-            oauth.google.javascript_origins = http://mysite
+            oauth2callback = http://mysite/oauth2callback/
+            oauth2.google.id_class = google
+            oauth2.google.client_id = XXX.apps.googleusercontent.com
+            oauth2.google.client_secret = XXX
 
         Configuring code::
             config = Configurator(settings=settings)
             config.include('pyramid_bricks.oauth')
-            config.add_route('oauth2callback', '/oauth2callback/*traverse',
-                    factory = OAuthConfig.factory)
 
         Callback View code::
-            @view_config(route_name = 'oauth2callback', context = OAuthConfig)
+            @view_config(route_name = 'oauth2callback', context = OAuthProviderConfig)
             def oauth2callback(request):
                 state = json.loads(request.params["state"])
                 if request.session.get_csrf_token() != state['csrf_token']:
                     raise BadCSRFToken()
+                # context is a OAuthProviderConfig instance
                 identity = request.context.get_token(request)
                 # identity is a GoogleOAuthIdentity object
                 ...
     """
     ocs = {}
     for name in settings:
-        if name.startswith("oauth."):
+        if name.startswith("oauth2."):
             comps = name.split('.')
             provider = comps[1]
             attribute = comps[2]
             value = settings[name]
             if attribute == "id_class":
-                value = id_classes[value]
+                value, defconf = id_classes[value]
+                conf = defconf.copy()
+                if provider in ocs:
+                    conf.update(ocs[provider])
+                ocs[provider] = conf
             if provider not in ocs:
-                ocs[provider] = OAuthConfig()
-            setattr(ocs[provider], attribute, value)
-    config.registry._oauth_config = ocs
+                ocs[provider] = {}
+            ocs[provider][attribute] = value
+    for provider in ocs:
+        provider_config = OAuthProviderConfig(provider, settings['oauth2callback'])
+        for attribute, value in ocs[provider].items():
+            setattr(provider_config, attribute, value)
+        ocs[provider] = provider_config
+    config.registry.oauth2_config = ocs
+    oauth2callback = urlparse(settings['oauth2callback'])
+    config.add_route('oauth2callback', oauth2callback.path + '*traverse',
+            factory = OAuthProviderConfig.factory)
 
 def includeme(config):
-    configure_oauth(config, config.registry.settings)
+    configure_oauth2(config, config.registry.settings)
 
 # vim: ts=4 sw=4 et nu
