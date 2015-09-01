@@ -174,6 +174,7 @@ def configure_oauth2(config, settings, id_classes=default_id_classes):
                 state = json.loads(request.params["state"])
                 if request.session.get_csrf_token() != state['csrf_token']:
                     raise BadCSRFToken()
+                requests.session.new_csrf_token()
                 # context is a OAuthProviderConfig instance
                 identity = request.context.get_token(request)
                 # identity is a GoogleOAuthIdentity object
