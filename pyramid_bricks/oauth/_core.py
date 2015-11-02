@@ -8,8 +8,10 @@ from jwt.jwk import JWKSet
 
 default_id_classes = {}
 
+
 class OAuthException(RuntimeError):
     pass
+
 
 class OAuthIdentity:
     name = "default"
@@ -43,13 +45,15 @@ class OAuthIdentity:
 
     @classmethod
     def register(cls, name=None, defconf=None, id_classes=default_id_classes):
-        if name == None:
+        if name is None:
             name = cls.name
-        if defconf == None:
+        if defconf is None:
             defconf = cls.config
-        id_classes[cls.name] = (cls, defconf)
+        id_classes[name] = (cls, defconf)
+
 
 OAuthIdentity.register()
+
 
 class JWTBasedOAuthIdentity(OAuthIdentity):
     @classmethod
@@ -64,7 +68,7 @@ class JWTBasedOAuthIdentity(OAuthIdentity):
         try:
             cls.__cached_keyset
         except AttributeError:
-            cls.__cached_keyset = None 
+            cls.__cached_keyset = None
 
         if cls.__cached_keyset is None or cls.__cached_keyset_exp < time.time():
             cert, exp = cls._fetch_keyset_cert()
@@ -82,7 +86,8 @@ class JWTBasedOAuthIdentity(OAuthIdentity):
         self.id_token = json.loads(self.jwt.decode(data["id_token"]).decode("utf-8"))
         if self.id_token["aud"] != self.config.client_id:
             raise OAuthException("#audience not match",
-                    "Audience of the issued token is not this application")
+                                 "Audience of the issued token is not this application")
+
 
 class OAuthProviderConfig:
     def __init__(self, name, callback_url_prefix):
@@ -95,12 +100,11 @@ class OAuthProviderConfig:
         self.id_class = OAuthIdentity
 
     def authorization_url(self, scope, state):
-        param = {}
-        param['client_id'] = self.client_id
-        param['response_type'] = 'code'
-        param['redirect_uri'] = self.callback_url_prefix + self.name
-        param['scope'] = scope
-        param['state'] = state
+        param = {'client_id': self.client_id,
+                 'response_type': 'code',
+                 'redirect_uri': self.callback_url_prefix + self.name,
+                 'scope': scope,
+                 'state': state}
         ret = self.authentication_endpoint
         if ret.find('?') == -1:
             ret += '?'
@@ -120,12 +124,12 @@ class OAuthProviderConfig:
         """
 
         data = {
-                "code": authorization_code,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "redirect_uri": self.callback_url_prefix + self.name,
-                "grant_type": "authorization_code",
-                }
+            "code": authorization_code,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "redirect_uri": self.callback_url_prefix + self.name,
+            "grant_type": "authorization_code",
+        }
         resp = requests.post(self.token_endpoint, data)
         return self.id_class(self, resp.status_code, json.loads(resp.text) if resp.status_code in [200, 400] else None)
 
@@ -143,19 +147,20 @@ class OAuthProviderConfig:
         return self.get_token_by_code(request.params["code"])
 
     @staticmethod
-    def factory(request):
-        return request.registry.oauth2_config
+    def directory_factory(request):
+        return getattr(request.registry, '_oauth2_config', None)
+
 
 def configure_oauth2(config, settings, id_classes=default_id_classes):
     """Configure Pyramid config object with settings
 
     Setting strings starting with ``oauth2.'' will be analyzed. And
-    registry.oauth2_config will be generated as a dictionary. The part
+    registry._oauth2_config will be generated as a dictionary. The part
     following ``oauth2.'' is the provider name, which is the key of
-    registry.oauth2_config. The values in the dictionary are instances of
+    registry._oauth2_config. The values in the dictionary are instances of
     OAuthProviderConfig. ``oauth2.<provider>.id_class'' will be looked up in id_classes.
 
-    OAuthProviderConfig.factory is a simple factory returns registry.oauth2_config.
+    OAuthProviderConfig.factory is a simple factory returns registry._oauth2_config.
 
     Example:
         Settings::
@@ -201,10 +206,15 @@ def configure_oauth2(config, settings, id_classes=default_id_classes):
         for attribute, value in ocs[provider].items():
             setattr(provider_config, attribute, value)
         ocs[provider] = provider_config
-    config.registry.oauth2_config = ocs
+    setattr(config.registry, '_oauth2_config', ocs)
     oauth2callback = urlparse(settings['oauth2callback'])
     config.add_route('oauth2callback', oauth2callback.path + '*traverse',
-            factory = OAuthProviderConfig.factory)
+                     factory=OAuthProviderConfig.directory_factory)
+
+
+def oauth2_config(request):
+    return getattr(request.registry, '_oauth2_config', None)
+
 
 def includeme(config):
     configure_oauth2(config, config.registry.settings)
