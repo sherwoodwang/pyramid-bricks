@@ -1,10 +1,10 @@
-import requests
 from urllib.parse import urlparse, urlencode
-
-import json
-import time
 from jwt.jwt import JWT
 from jwt.jwk import JWKSet
+from zope.interface import implementer, Interface
+import json
+import time
+import requests
 
 default_id_classes = {}
 
@@ -146,21 +146,41 @@ class OAuthProviderConfig:
             raise Exception(request.params["error"])
         return self.get_token_by_code(request.params["code"])
 
-    @staticmethod
-    def directory_factory(request):
-        return getattr(request.registry, '_oauth2_config', None)
+
+class IOAuthConfig(Interface):
+    def add(self, provider_config: OAuthProviderConfig):
+        pass
+
+    def __setitem__(self, provider: str, provider_config: OAuthProviderConfig):
+        pass
+
+    def __getitem__(self, provider: str):
+        pass
+
+    def __contains__(self, provider: str):
+        pass
+
+
+@implementer(IOAuthConfig)
+class OAuthConfig:
+    def __init__(self):
+        self._data = {}
+
+    def add(self, provider_config: OAuthProviderConfig):
+        self[provider_config.name] = provider_config
+
+    def __setitem__(self, provider: str, provider_config: OAuthProviderConfig):
+        self._data[provider] = provider_config
+
+    def __getitem__(self, provider: str):
+        return self._data[provider]
+
+    def __contains__(self, provider: str):
+        return provider in self._data
 
 
 def configure_oauth2(config, settings, id_classes=default_id_classes):
     """Configure Pyramid config object with settings
-
-    Setting strings starting with ``oauth2.'' will be analyzed. And
-    registry._oauth2_config will be generated as a dictionary. The part
-    following ``oauth2.'' is the provider name, which is the key of
-    registry._oauth2_config. The values in the dictionary are instances of
-    OAuthProviderConfig. ``oauth2.<provider>.id_class'' will be looked up in id_classes.
-
-    OAuthProviderConfig.factory is a simple factory returns registry._oauth2_config.
 
     Example:
         Settings::
@@ -201,22 +221,30 @@ def configure_oauth2(config, settings, id_classes=default_id_classes):
             if provider not in ocs:
                 ocs[provider] = {}
             ocs[provider][attribute] = value
+
+    oauth_config = OAuthConfig()
     for provider in ocs:
         provider_config = OAuthProviderConfig(provider, settings['oauth2callback'])
         for attribute, value in ocs[provider].items():
             setattr(provider_config, attribute, value)
-        ocs[provider] = provider_config
-    setattr(config.registry, '_oauth2_config', ocs)
-    oauth2callback = urlparse(settings['oauth2callback'])
-    config.add_route('oauth2callback', oauth2callback.path + '*traverse',
-                     factory=OAuthProviderConfig.directory_factory)
+        oauth_config.add(provider_config)
+
+    def register_oauth_config():
+        config.registry.registerUtility(oauth_config, IOAuthConfig)
+    config.action('register_oauth_config', register_oauth_config)
+    return oauth_config
 
 
 def oauth2_config(request):
-    return getattr(request.registry, '_oauth2_config', None)
+    return request.registry.getUtility(IOAuthConfig)
 
 
 def includeme(config):
-    configure_oauth2(config, config.registry.settings)
+    settings = config.get_settings()
+    oauth_config = configure_oauth2(config, settings)
+
+    oauth2callback = urlparse(settings['oauth2callback'])
+    config.add_route('oauth2callback', oauth2callback.path + '*traverse',
+                     factory=lambda request: oauth_config)
 
 # vim: ts=4 sw=4 et nu
