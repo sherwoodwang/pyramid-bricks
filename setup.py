@@ -18,8 +18,10 @@ setup(name='pyramid_bricks',
       zip_safe=False,
       install_requires=[
           'jwt',
-          'requests',
-          'zope.interface',
+          'pyramid',
           'redis',
+          'requests',
+          'venusian',
+          'zope.interface',
       ],
       )
