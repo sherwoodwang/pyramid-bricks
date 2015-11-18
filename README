@@ -1,4 +1,1 @@
-I've written several web applications with Pyramid. Pyramid is a great
-framework giving you all flexibility. Doing everything with Pyramid is clean.
-However, building websites is often a repeating work. So I collected the bricks
-from the my projects, put them here, expecting them can be useful elsewhere.
+Several basic components which can be used with Pyramid.
