@@ -23,5 +23,6 @@ setup(name='pyramid_bricks',
           'requests',
           'venusian',
           'zope.interface',
+          'zope.proxy',
       ],
       )
