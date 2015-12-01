@@ -73,20 +73,20 @@ class DirectoryFactory:
             raise ConflictMountPoint
 
         def create_dict_factory_dyanmic_proxy(dict_factory):
-            def proxied_dict_factory(*args, **kwargs):
-                dict_like = dict_factory(*args, **kwargs)
+            def new_dict_factory(request):
+                dict_like = dict_factory(request)
                 if isinstance(dict_like, _SimpleMountable):
                     return dict_like
                 else:
                     return make_mountable_dynamically(dict_like)
-            return proxied_dict_factory
+            return new_dict_factory
 
         dict_factory = create_dict_factory_dyanmic_proxy(dict_factory)
 
-        def factory(*args, **kwargs):
-            dict_like = dict_factory(*args, **kwargs)
+        def factory(request):
+            dict_like = dict_factory(request)
             if hasattr(dict_like, '_mounted_factory') and factory.mounted is not None:
-                setattr(dict_like, '_mounted_factory', partial(factory.mounted, *args, **kwargs))
+                setattr(dict_like, '_mounted_factory', partial(factory.mounted, request))
             return dict_like
         factory.mounted = DirectoryFactory._reify(mounted_factory)
 
