@@ -178,6 +178,9 @@ class OAuthConfig:
     def __contains__(self, provider: str):
         return provider in self._data
 
+    def __iter__(self):
+        return iter(self._data)
+
 
 def configure_oauth2(config, settings, id_classes=default_id_classes):
     """Configure Pyramid config object with settings
