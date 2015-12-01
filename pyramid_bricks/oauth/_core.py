@@ -130,7 +130,7 @@ class OAuthProviderConfig:
             "redirect_uri": self.callback_url_prefix + self.name,
             "grant_type": "authorization_code",
         }
-        resp = requests.post(self.token_endpoint, data)
+        resp = requests.post(self.token_endpoint, data, headers={'user-agent': 'pyramid_bricks.oauth'})
         return self.id_class(self, resp.status_code, json.loads(resp.text) if resp.status_code in [200, 400] else None)
 
     def get_token(self, request):
