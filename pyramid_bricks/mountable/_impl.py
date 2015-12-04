@@ -49,23 +49,6 @@ class DirectoryFactory:
     def __init__(self):
         self.subtrees = {}
 
-    @staticmethod
-    def _reify(func):
-        if func is None:
-            return None
-
-        created = False
-        value = None
-
-        def nfunc(*args, **kwargs):
-            nonlocal created, value
-            if not created:
-                value = func(*args, **kwargs)
-                print('create value')
-                created = True
-            return value
-        return nfunc
-
     def mount(self, name, dict_factory):
         mounted_factory = self.subtrees.get(name, None)
 
@@ -88,7 +71,7 @@ class DirectoryFactory:
             if hasattr(dict_like, '_mounted_factory') and factory.mounted is not None:
                 setattr(dict_like, '_mounted_factory', partial(factory.mounted, request))
             return dict_like
-        factory.mounted = DirectoryFactory._reify(mounted_factory)
+        factory.mounted = mounted_factory
 
         self.subtrees[name] = factory
 
