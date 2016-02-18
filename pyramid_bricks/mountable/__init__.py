@@ -1,1 +1,1 @@
-from ._impl import includeme, subtree_factory, mount
+from ._impl import includeme, subtree_factory, mount, Tree
