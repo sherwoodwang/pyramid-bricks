@@ -4,7 +4,7 @@ import os
 from setuptools import setup, find_packages
 
 setup(name='pyramid_bricks',
-      version='0.2',
+      version='0.3',
       description='Common bricks for Pyramid framework',
       classifiers=[
           "Programming Language :: Python",
@@ -14,8 +14,6 @@ setup(name='pyramid_bricks',
       author='Sherwood Wang',
       author_email='sherwood@wang.onl',
       packages=find_packages(),
-      include_package_data=True,
-      zip_safe=False,
       install_requires=[
           'jwt',
           'pyramid',
@@ -24,5 +22,5 @@ setup(name='pyramid_bricks',
           'venusian',
           'zope.interface',
           'zope.proxy',
-      ],
+      ]
       )
