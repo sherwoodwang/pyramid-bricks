@@ -4,7 +4,7 @@ import os
 from setuptools import setup, find_packages
 
 setup(name='pyramid_bricks',
-      version='0.1',
+      version='0.2',
       description='Common bricks for Pyramid framework',
       classifiers=[
           "Programming Language :: Python",
